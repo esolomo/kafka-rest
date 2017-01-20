@@ -55,6 +55,7 @@ class BdLService(object):
         #requestOffsetCmd = "curl -s -X GET -H 'Accept: application/vnd.kafka.binary.v1+json' " + self.consumerid['base_uri'] + "/offsets"
         #status, output = commands.getstatusoutput(requestOffsetCmd)
         #self.httpConsumerResults = []
+        self.httpcserie = []
         while True:            
             #statusoffset, outputoffset = commands.getstatusoutput(requestOffsetCmd)            
             #time.sleep(0.5)
@@ -65,7 +66,7 @@ class BdLService(object):
                 for message in messages:
                     #print message
                     entry = dict(rx_timestamp=date, msg=message['value'], offset=message['offset'], partition=message['partition'], key=message['key'], topic='BDLIN', rx_grouptimestamp=date)
-                    self.cserie.append(entry)
+                    self.httpcserie.append(entry)
 
     def httpProducer(self):
         print "Running "+ str(self.iteration)  +" requests"
@@ -104,15 +105,15 @@ class BdLService(object):
             self.pserie.append(entry)
             time.sleep(self.frequency)
 
-    def Process(self, output="./output.txt"):
+    def Process(self, pserie, cserie, output="./output.txt"):
         print "Processing data"
         results = []
         for x in range(0, self.iteration):
-            tx = self.pserie[x]['tx_timestamp']
-            rx = self.cserie[x]['rx_timestamp']
+            tx = pserie[x]['tx_timestamp']
+            rx = cserie[x]['rx_timestamp']
             diff=dateutil.parser.parse(rx) - dateutil.parser.parse(tx) 
             latency=diff.total_seconds()
-            entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,tx_offset=self.pserie[x]['offset'],rx_offset=self.cserie[x]['offset'],topic=self.cserie[x]['topic'],msg=self.cserie[x]['msg'],partition=self.cserie[x]['partition'])
+            entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],msg=cserie[x]['msg'],partition=cserie[x]['partition'])
             results.append(entry)
                 #entry['@timestamp'] = tx                        
         idx = { 'index': { '_index': 'mdgstats', '_type': 'stats', '_id': 0, }}
@@ -149,7 +150,7 @@ class Orchestrate(object):
             print "**************************Consumer array DATA length: ",BdL.cserie.__len__(),"***************************************"
             print "**************************Producer array DATA length: ",BdL.pserie.__len__(),"***************************************"    
             #results =  Process(BdL.iteration, BdL.pserie, BdL.cserie)
-        BdL.Process("./httptoKafka_output.txt")
+        BdL.Process(BdL.pserie, BdL.cserie, "./httptoKafka_output.txt")
 
 
     def kafkatoHttp(self):
@@ -163,14 +164,14 @@ class Orchestrate(object):
         time.sleep(5)
         BdL.httpProducer()
 
-        while BdL.cserie.__len__() < BdL.pserie.__len__():
-            print "**************************Consumer array DATA length: ",BdL.cserie.__len__(),"***************************************"
+        while BdL.httpcserie.__len__() < BdL.pserie.__len__():
+            print "**************************Consumer array DATA length: ",BdL.httpcserie.__len__(),"***************************************"
             print "**************************Producer array DATA length: ",BdL.pserie.__len__(),"***************************************"
             time.sleep(3)
 
         print "Removing consumer"
         BdL.httpConsumerRemove()
-        BdL.Process("./kafkatoHttp_output.txt")
+        BdL.Process(BdL.pserie, BdL.httpcserie, "./kafkatoHttp_output.txt")
 
 
 
