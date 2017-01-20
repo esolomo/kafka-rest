@@ -58,12 +58,13 @@ class BdLService(object):
         while True:            
             #statusoffset, outputoffset = commands.getstatusoutput(requestOffsetCmd)            
             #time.sleep(0.5)
-            status, output = commands.getstatusoutput(requestDataCmd)
+            status, output = commands.getstatusoutput(requestDataCmd)            
             messages = json.loads(output)
             if messages.__len__() > 0:
+                date = datetime.now().isoformat()
                 for message in messages:
                     #print message
-                    entry = dict(rx_timestamp=datetime.now().isoformat(), msg=message['value'], offset=message['offset'], partition=message['partition'], key=message['key'], topic='BDLIN')
+                    entry = dict(rx_timestamp=date, msg=message['value'], offset=message['offset'], partition=message['partition'], key=message['key'], topic='BDLIN', rx_grouptimestamp=date)
                     self.cserie.append(entry)
 
     def httpProducer(self):
@@ -110,7 +111,7 @@ class BdLService(object):
             tx = self.pserie[x]['tx_timestamp']
             rx = self.cserie[x]['rx_timestamp']
             diff=dateutil.parser.parse(rx) - dateutil.parser.parse(tx) 
-            latency=diff.total_seconds()        
+            latency=diff.total_seconds()
             entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,tx_offset=self.pserie[x]['offset'],rx_offset=self.cserie[x]['offset'],topic=self.cserie[x]['topic'],msg=self.cserie[x]['msg'],partition=self.cserie[x]['partition'])
             results.append(entry)
                 #entry['@timestamp'] = tx                        
