@@ -125,11 +125,8 @@ class BdLService(object):
             rx = cserie[x]['rx_timestamp']
             diff=dateutil.parser.parse(rx) - dateutil.parser.parse(tx) 
             latency=diff.total_seconds()
-            #entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],msg=cserie[x]['msg'],partition=cserie[x]['partition'],msgsize=self.msgsize)
-            entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],partition=cserie[x]['partition'],msgsize=self.msgsize)
-            #entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],partition=cserie[x]['partition'],msgsize=self.msgsize)
+            entry=dict(txtimestamp=tx,rxtime=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],partition=cserie[x]['partition'],msgsize=self.msgsize)
             results.append(entry)
-                #entry['@timestamp'] = tx                        
         idx = { 'index': { '_index': 'mdgstats', '_type': 'stats', '_id': 0, }}
         jsonoutput = open(output , 'w+')
         print "Copying Data"
