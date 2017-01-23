@@ -4,6 +4,7 @@ import random
 import sys
 from datetime import datetime
 from kafka import KafkaConsumer
+from kafka import KafkaProducer
 import random
 import threading
 import time
@@ -17,25 +18,37 @@ import json
 import logging
 import random
 import binascii
+import base64
+
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s (%(threadName)-2s) %(message)s',
                     )
 
+
 class BdLService(object):
-    def __init__(self):
+    def __init__(self, topic="BLDIN", filePath="95K.msg"):
         self.pserie = []
         self.headers = "Content-Type: application/vnd.kafka.binary.v1+json"
-        self.data = "{\"records\":[{\"value\":\"S2Fma2E=\"}]}"
+        #self.data = "{\"records\":[{\"value\":\"S2Fma2E=\"}]}"
+        self.buffer = "Read buffer:\n"
+        self.buffer += open(filePath, 'rU').read()        
+        encoded_msg = base64.b64encode(self.buffer)
+        msgsize =  sys.getsizeof(encoded_msg)
+        self.encoded_msg = encoded_msg
+        self.msgsize = msgsize
+        self.data = "{\"records\":[{\"value\":\""+ encoded_msg + "\"}]}"
         self.fqdn = "localhost"
         self.port = 8082
-        self.topic = "BDLIN"
+        self.topic = topic
         self.url = "http://"+self.fqdn+":"+str(self.port)+"/topics/"+self.topic
         self.cmd = "curl -s -X POST -H '" + self.headers + "'  --data '"+ self.data + "' " + self.url        
         self.cserie = []
         self.pserie = []
         self.iteration = int(sys.argv[1]) if sys.argv.__len__() > 1 else 1000
         self.frequency = float(sys.argv[2]) if sys.argv.__len__() > 2 else 0.0001
+
+
 
 
     def httpConsumerRemove(self):
@@ -50,7 +63,7 @@ class BdLService(object):
         requestConsumerCmd = "curl -s -X POST -H 'Content-Type: application/vnd.kafka.v1+json' --data '{\"format\": \"binary\", \"auto.offset.reset\": \"smallest\"}' 'http://localhost:8082/consumers/" + groupid + "\'"
         status, output = commands.getstatusoutput(requestConsumerCmd)
         self.consumerid = json.loads(output)
-        requestDataCmd = "curl -s -X GET -H 'Accept: application/vnd.kafka.binary.v1+json' " + self.consumerid['base_uri'] + "/topics/BDLIN"
+        requestDataCmd = "curl -s -X GET -H 'Accept: application/vnd.kafka.binary.v1+json' " + self.consumerid['base_uri'] + "/topics/" + self.topic
         status, output = commands.getstatusoutput(requestDataCmd)
         #requestOffsetCmd = "curl -s -X GET -H 'Accept: application/vnd.kafka.binary.v1+json' " + self.consumerid['base_uri'] + "/offsets"
         #status, output = commands.getstatusoutput(requestOffsetCmd)
@@ -58,24 +71,23 @@ class BdLService(object):
         self.httpcserie = []
         while True:            
             #statusoffset, outputoffset = commands.getstatusoutput(requestOffsetCmd)            
-            #time.sleep(0.5)
             status, output = commands.getstatusoutput(requestDataCmd)            
             messages = json.loads(output)
             if messages.__len__() > 0:
                 date = datetime.now().isoformat()
                 for message in messages:
-                    #print message
-                    entry = dict(rx_timestamp=date, msg=message['value'], offset=message['offset'], partition=message['partition'], key=message['key'], topic='BDLIN', rx_grouptimestamp=date)
+                    entry = dict(rx_timestamp=date, msg=message['value'], offset=message['offset'], partition=message['partition'], key=message['key'], topic=self.topic, rx_grouptimestamp=date)
                     self.httpcserie.append(entry)
 
     def httpProducer(self):
         print "Running "+ str(self.iteration)  +" requests"
-        #self.iteration = iteration if iteration else self.iteration
-        #self.frequency = frequency if frequency else self.frequency
         for x in range(0, self.iteration):            
             print "Iteration : ",x
             date = datetime.now().isoformat()
             status, output = commands.getstatusoutput(self.cmd)
+            if status != 0:
+                print "Too Many Errors, failed to send command"
+                exit (0)
             rdata = json.loads(output)
             partition = rdata['offsets'][0]['partition']
             offset = rdata['offsets'][0]['offset']
@@ -86,22 +98,22 @@ class BdLService(object):
 
     def Consumer(self):
         groupid = binascii.b2a_hex(os.urandom(5))
-        self.consumer = KafkaConsumer('BDLIN',group_id='enxg-'+str(groupid), bootstrap_servers=['172.17.42.1'])
+        self.consumer = KafkaConsumer(self.topic,group_id='enxg-'+str(groupid), bootstrap_servers=['172.17.42.1'])
         for message in self.consumer:                    
             entry = dict(rx_timestamp=datetime.now().isoformat(), topic=message.topic, partition=message.partition, offset=message.offset, key=message.key,msg=message.value)
             self.cserie.append(entry)
 
     def Producer(self):
-        print "Running "+ str(self.iteration)  +" requests"
+        print "Running Kafka Producer "+ str(self.iteration)  +" requests"
+        self.producer = KafkaProducer(bootstrap_servers='localhost:9092',compression_type='gzip')
         for x in range(0, self.iteration):            
             print "Iteration : ",x
             date = datetime.now().isoformat()
-            status, output = commands.getstatusoutput(self.cmd)
-            rdata = json.loads(output)
-            partition = rdata['offsets'][0]['partition']
-            offset = rdata['offsets'][0]['offset']
-            error_code = rdata['offsets'][0]['error_code']
-            entry = dict(tx_timestamp=date, status=status, partition=partition, offset=offset, error_code=error_code)
+            output = self.producer.send(self.topic, self.encoded_msg).get(timeout=60)
+            partition = output.partition 
+            offset = output.offset
+            error_code = 'None'
+            entry = dict(tx_timestamp=date, status='OK', partition=partition, offset=offset, error_code=error_code)
             self.pserie.append(entry)
             time.sleep(self.frequency)
 
@@ -113,7 +125,9 @@ class BdLService(object):
             rx = cserie[x]['rx_timestamp']
             diff=dateutil.parser.parse(rx) - dateutil.parser.parse(tx) 
             latency=diff.total_seconds()
-            entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],msg=cserie[x]['msg'],partition=cserie[x]['partition'])
+            #entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],msg=cserie[x]['msg'],partition=cserie[x]['partition'],msgsize=self.msgsize)
+            entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],partition=cserie[x]['partition'],msgsize=self.msgsize)
+            #entry=dict(txtimestamp=tx,rxtimestamp=rx,latency=latency,rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],partition=cserie[x]['partition'],msgsize=self.msgsize)
             results.append(entry)
                 #entry['@timestamp'] = tx                        
         idx = { 'index': { '_index': 'mdgstats', '_type': 'stats', '_id': 0, }}
@@ -135,7 +149,7 @@ class Orchestrate(object):
 
     def httptoKafka(self):
         condition = threading.Condition()
-        BdL = BdLService() 
+        BdL = BdLService(topic='httptoKafka') 
         consumer = threading.Thread(name='consumer', target=BdL.Consumer, args=())
         consumer.daemon = True
         consumer.start()
@@ -155,14 +169,14 @@ class Orchestrate(object):
 
     def kafkatoHttp(self):
         condition = threading.Condition()
-        BdL = BdLService() 
-        #BdL.httpConsumer()
+        BdL = BdLService(topic="kafkatoHttp") #BdLService(topic="kafkatoHttp", filePath="700K.msg") 
         consumer = threading.Thread(name='consumer', target=BdL.httpConsumer, args=())
         consumer.daemon = True
         consumer.start()
         print "Waiting before running producer"
         time.sleep(5)
-        BdL.httpProducer()
+        #BdL.httpProducer()
+        BdL.Producer()
 
         while BdL.httpcserie.__len__() < BdL.pserie.__len__():
             print "**************************Consumer array DATA length: ",BdL.httpcserie.__len__(),"***************************************"
@@ -182,7 +196,7 @@ if __name__ == '__main__':
     Orchestrate().httptoKafka()
     print "httptoKafka test suite: completed"
     time.sleep(10)
-    print "Running kafkatoHttp test suite"
+    print "Running kafkatoHttp test suite"    
     Orchestrate().kafkatoHttp()
     print "kafkatoHttp test suite: completed"
     
