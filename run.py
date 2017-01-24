@@ -125,17 +125,19 @@ class BdLService(object):
             rx = cserie[x]['rx_timestamp']
             diff=dateutil.parser.parse(rx) - dateutil.parser.parse(tx) 
             latency=diff.total_seconds()
-            entry=dict(txtimestamp=tx,rxtime=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],partition=cserie[x]['partition'],msgsize=self.msgsize)
+            timestamp = tx + "Z"
+            entry=dict(rxtime=rx,latency=latency,tx_offset=pserie[x]['offset'],rx_offset=cserie[x]['offset'],topic=cserie[x]['topic'],partition=cserie[x]['partition'],msgsize=self.msgsize)
+            entry['@timestamp'] = timestamp
             results.append(entry)
-        idx = { 'index': { '_index': 'mdgstats', '_type': 'stats', '_id': 0, }}
+        idx = { 'index': { '_index': self.topic, '_type': 'bdl', '_id': 0}}
         jsonoutput = open(output , 'w+')
         print "Copying Data"
         for r in  results:
             entry = {}
             newidx = idx
             newidx['index']['_id'] = binascii.b2a_hex(os.urandom(8))
-            #json.dump(newidx, jsonoutput)
-            #jsonoutput.write("\n")
+            json.dump(newidx, jsonoutput)
+            jsonoutput.write("\n")
             json.dump(r, jsonoutput)
             jsonoutput.write("\n")
 
@@ -146,7 +148,7 @@ class Orchestrate(object):
 
     def httptoKafka(self):
         condition = threading.Condition()
-        BdL = BdLService(topic='httptoKafka') 
+        BdL = BdLService(topic='httptokafka') 
         consumer = threading.Thread(name='consumer', target=BdL.Consumer, args=())
         consumer.daemon = True
         consumer.start()
@@ -166,7 +168,7 @@ class Orchestrate(object):
 
     def kafkatoHttp(self):
         condition = threading.Condition()
-        BdL = BdLService(topic="kafkatoHttp") #BdLService(topic="kafkatoHttp", filePath="700K.msg") 
+        BdL = BdLService(topic="kafkatohttp") #BdLService(topic="kafkatoHttp", filePath="700K.msg") 
         consumer = threading.Thread(name='consumer', target=BdL.httpConsumer, args=())
         consumer.daemon = True
         consumer.start()
@@ -190,9 +192,9 @@ class Orchestrate(object):
 
 if __name__ == '__main__':
     print "Running httptoKafka test suite"
-    Orchestrate().httptoKafka()
+    #Orchestrate().httptoKafka()
     print "httptoKafka test suite: completed"
-    time.sleep(10)
+    #time.sleep(10)
     print "Running kafkatoHttp test suite"    
     Orchestrate().kafkatoHttp()
     print "kafkatoHttp test suite: completed"
